@@ -4,7 +4,7 @@ SCRIPT_NAME=$(basename $0)
 . load-config.sh
 
 ADB=adb
-GDB=${GDB:-prebuilt/$(uname -s | tr "[[:upper:]]" "[[:lower:]]")-x86/toolchain/arm-linux-androideabi-4.4.x/bin/arm-linux-androideabi-gdb}
+GDB=${GDB:-prebuilt/$(uname -s | tr "[[:upper:]]" "[[:lower:]]")-x86/toolchain/arm-linux-androideabi-4.6/bin/arm-linux-androideabi-gdb}
 B2G_BIN=/system/b2g/b2g
 GDBINIT=/tmp/b2g.gdbinit.$(whoami)
 
