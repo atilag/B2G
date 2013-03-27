@@ -30,7 +30,7 @@ esac
 
 #GITREPO=${GITREPO:-"git://github.com/mozilla-b2g/b2g-manifest"}
 GITREPO=${GITREPO:-"git://github.com/atilag/b2g-manifest"}
-BRANCH=${BRANCH:-atilag-sgs2}
+BRANCH=${BRANCH:-master-sgs2}
 
 GIT_TEMP_REPO="tmp_manifest_repo"
 if [ -n "$2" ]; then
