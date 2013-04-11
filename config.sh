@@ -75,8 +75,14 @@ case "$1" in
 	repo_sync $1
 	;;
 
-"otoro"|"unagi"|"keon"|"inari"|"leo")
+"otoro"|"unagi"|"keon"|"inari"|"leo"|"hamachi")
 	echo DEVICE=$1 >> .tmp-config &&
+	repo_sync $1
+	;;
+
+"tara")
+	echo DEVICE=sp8810ea >> .tmp-config &&
+	echo LUNCH=sp8810eabase-eng >> .tmp-config &&
 	repo_sync $1
 	;;
 
@@ -110,6 +116,8 @@ case "$1" in
 	echo - inari
 	echo - keon
 	echo - leo
+	echo - hamachi
+	echo - tara
 	echo - pandaboard
 	echo - emulator
 	echo - emulator-x86
