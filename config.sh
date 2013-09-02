@@ -30,8 +30,8 @@ case `uname` in
 	exit -1
 esac
 
-GITREPO=${GITREPO:-"git://github.com/mozilla-b2g/b2g-manifest"}
-BRANCH=${BRANCH:-v1-train}
+GITREPO=${GITREPO:-"git://github.com/atilag/b2g-manifest"}
+BRANCH=${BRANCH:-sgs2-jb}
 
 while [ $# -ge 1 ]; do
 	case $1 in
@@ -71,6 +71,11 @@ echo GECKO_OBJDIR=$PWD/objdir-gecko >> .tmp-config
 echo DEVICE_NAME=$1 >> .tmp-config
 
 case "$1" in
+"galaxy-s2-jb")
+	echo DEVICE=galaxys2-jb >> .tmp-config &&
+	repo_sync $1
+	;;
+
 "galaxy-s2")
 	echo DEVICE=galaxys2 >> .tmp-config &&
 	repo_sync $1
@@ -134,6 +139,7 @@ case "$1" in
 	echo "Flags are passed through to |./repo sync|."
 	echo
 	echo Valid devices to configure are:
+	echo - galaxy-s2-jb
 	echo - galaxy-s2
 	echo - galaxy-nexus
 	echo - nexus-4
