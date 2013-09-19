@@ -72,7 +72,7 @@ echo DEVICE_NAME=$1 >> .tmp-config
 
 case "$1" in
 "galaxy-s2-jb")
-	echo DEVICE=galaxys2-jb >> .tmp-config &&
+	echo DEVICE=i9100 >> .tmp-config &&
 	repo_sync $1
 	;;
 
