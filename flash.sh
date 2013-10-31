@@ -195,6 +195,59 @@ delete_extra_gecko_files_on_device()
 	return 0
 }
 
+flash_i9100()
+{
+	if [ ! -f "`which \"$HEIMDALL\"`" ]; then
+		echo Couldn\'t find heimdall.
+		echo Install Heimdall v1.3.1 from http://www.glassechidna.com.au/products/heimdall/
+		exit -1
+	fi
+
+	run_adb reboot download && sleep 8
+	if [ $? -ne 0 ]; then
+		echo Couldn\'t reboot into download mode. Hope you\'re already in download mode
+	fi
+
+	case $1 in
+	"system")
+		$HEIMDALL flash --hidden out/target/product/$DEVICE/$1.img
+		;;
+
+	"kernel")
+		$HEIMDALL flash --kernel device/samsung/$DEVICE/kernel
+		;;
+
+	*)
+		$HEIMDALL flash --hidden out/target/product/$DEVICE/system.img --kernel device/samsung/$DEVICE/kernel &&
+		update_time
+		;;
+	esac
+
+	ret=$?
+	echo -ne \\a
+	if [ $ret -ne 0 ]; then
+		echo Heimdall flashing failed.
+		case "`uname`" in
+		"Darwin")
+			if kextstat | grep com.devguru.driver.Samsung > /dev/null ; then
+				echo Kies drivers found.
+				echo Uninstall kies completely and restart your system.
+			else
+				echo Restart your system if you\'ve just installed heimdall.
+			fi
+			;;
+		"Linux")
+			echo Make sure you have a line like
+			echo SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"04e8\", MODE=\"0666\"
+			echo in /etc/udev/rules.d/android.rules
+			;;
+		esac
+		exit -1
+	fi
+
+	echo Run \|./flash.sh gaia\| if you wish to install or update gaia.
+}
+
 while [ $# -gt 0 ]; do
 	case "$1" in
 	"-s")
