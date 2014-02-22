@@ -9,22 +9,14 @@ SCRIPT_NAME=$(basename $0)
 . load-config.sh
 
 ADB=adb
-if [ -z "${GDB}" ]; then
-   if [ -d prebuilt ]; then
-      GDB=prebuilt/$(uname -s | tr "[[:upper:]]" "[[:lower:]]")-x86/toolchain/arm-linux-androideabi-4.4.x/bin/arm-linux-androideabi-gdb
-   elif [ -d prebuilts ]; then
-      GDB=prebuilts/gcc/$(uname -s | tr "[[:upper:]]" "[[:lower:]]")-x86/arm/arm-linux-androideabi-4.7/bin/arm-linux-androideabi-gdb
-   else
-      echo "Not sure where gdb is located. Override using GDB= or fix the script."
-      exit 1
-   fi
-fi
-
+GDB=${GDB:-prebuilts/gcc/$(uname -s | tr "[[:upper:]]" "[[:lower:]]")-x86/arm/arm-linux-androideabi-4.7/bin/arm-linux-androideabi-gdb}
 B2G_BIN=/system/b2g/b2g
 GDBINIT=/tmp/b2g.gdbinit.$(whoami).$$
 
 GONK_OBJDIR=out/target/product/$DEVICE
+GONK_OBJDIR_DEBUG=out/debug/target/product/$DEVICE
 SYMDIR=$GONK_OBJDIR/symbols
+SYMDIR_DEBUG=$GONK_OBJDIR_DEBUG/symbols
 
 GDBSERVER_PID=$(get_pid_by_name gdbserver)
 
@@ -89,9 +81,9 @@ else
 fi
 
 sleep 1
-echo "set solib-absolute-prefix $SYMDIR" > $GDBINIT
+echo "set solib-absolute-prefix $SYMDIR:$SYMDIR_DEBUG" > $GDBINIT
 echo "handle SIGPIPE nostop" >> $GDBINIT
-echo "set solib-search-path $GECKO_OBJDIR/dist/bin:$SYMDIR/system/lib:$SYMDIR/system/lib/hw:$SYMDIR/system/lib/egl:$SYMDIR/system/bin:$GONK_OBJDIR/system/lib:$GONK_OBJDIR/system/lib/egl:$GONK_OBJDIR/system/lib/hw:$GONK_OBJDIR/system/vendor/lib:$GONK_OBJDIR/system/vendor/lib/hw:$GONK_OBJDIR/system/vendor/lib/egl" >> $GDBINIT
+echo "set solib-search-path $GECKO_OBJDIR/dist/bin:$SYMDIR/system/lib:$SYMDIR/system/lib/hw:$SYMDIR/system/lib/egl:$SYMDIR/system/bin:$GONK_OBJDIR/system/lib:$GONK_OBJDIR/system/lib/egl:$GONK_OBJDIR/system/lib/hw:$GONK_OBJDIR/system/vendor/lib:$GONK_OBJDIR/system/vendor/lib/hw:$GONK_OBJDIR/system/vendor/lib/egl:$SYMDIR_DEBUG/system/lib/hw:$SYMDIR_DEBUG/system/lib" >> $GDBINIT
 echo "target extended-remote :$GDB_PORT" >> $GDBINIT
 
 PROG=$GECKO_OBJDIR/dist/bin/$(basename $B2G_BIN)
