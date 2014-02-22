@@ -6,6 +6,7 @@ ADB=${ADB:-adb}
 FASTBOOT=${FASTBOOT:-fastboot}
 HEIMDALL=${HEIMDALL:-heimdall}
 VARIANT=${VARIANT:-eng}
+FULLFLASH=false
 
 if [ ! -f "`which \"$ADB\"`" ]; then
 	ADB=out/host/`uname -s | tr "[[:upper:]]" "[[:lower:]]"`-x86/bin/adb
@@ -47,8 +48,12 @@ update_time()
 fastboot_flash_image()
 {
 	# $1 = {userdata,boot,system}
+	PARTITION=$1
+	if [ "$DEVICE" == "flatfish" ] && [ "$PARTITION" == "userdata" ]; then
+		PARTITION="data"
+	fi
 	imgpath="out/target/product/$DEVICE/$1.img"
-	out="$(run_fastboot flash "$1" "$imgpath" 2>&1)"
+	out="$(run_fastboot flash "$PARTITION" "$imgpath" 2>&1)"
 	rv="$?"
 	echo "$out"
 
@@ -66,36 +71,67 @@ fastboot_flash_image()
 
 flash_fastboot()
 {
+	local lockedness=$1 project=$2
+	case $lockedness in
+	"unlock"|"nounlock")
+		;;
+	*)
+		echo "$0: $FUNCNAME: Invalid argument: $lockedness"
+		return 1
+		;;
+	esac
+	case $project in
+	"system"|"boot"|"userdata"|"")
+		;;
+	*)
+		echo "$0: Unrecognized project: $project"
+		return 1
+		;;
+	esac
+
 	case $DEVICE in
 	"helix")
 		run_adb reboot oem-1
+		;;
+	"flatfish")
+		run_adb reboot boot-fastboot
 		;;
 	*)
 		run_adb reboot bootloader
 		;;
 	esac
-	run_fastboot devices &&
-	( [ "$1" = "nounlock" ] || run_fastboot oem unlock || true )
 
-	if [ $? -ne 0 ]; then
+	if ! run_fastboot devices; then
 		echo Couldn\'t setup fastboot
-		return -1
+		return 1
 	fi
-	case $2 in
+
+	case $lockedness in
+	"unlock")
+		run_fastboot oem unlock || true
+		;;
+	esac
+
+	case $project in
 	"system" | "boot" | "userdata")
-		fastboot_flash_image $2 &&
+		fastboot_flash_image $project &&
 		run_fastboot reboot
 		;;
 
-	*)
+	"")
 		# helix doesn't support erase command in fastboot mode.
 		VERB="erase"
-		if [ "$DEVICE" == "mako" ]; then
+		if [ "$DEVICE" == "hammerhead" ] || [ "$DEVICE" == "mako" ] ||
+		[ "$DEVICE" == "flo" ]; then
 			VERB="format"
+		fi
+		DATA_PART_NAME="userdata"
+		if [ "$DEVICE" == "flatfish" ]; then
+			DATA_PART_NAME="data"
 		fi
 		if [ "$DEVICE" != "helix" ]; then
 			run_fastboot $VERB cache &&
-			run_fastboot $VERB userdata
+			run_fastboot $VERB $DATA_PART_NAME
 			if [ $? -ne 0 ]; then
 				return $?
 			fi
@@ -113,6 +149,16 @@ flash_fastboot()
 
 flash_heimdall()
 {
+	local project=$1
+	case $project in
+	"system"|"kernel"|"")
+		;;
+	*)
+		echo "$0: Unrecognized project: $project"
+		return 1
+		;;
+	esac
+
 	if [ ! -f "`which \"$HEIMDALL\"`" ]; then
 		echo Couldn\'t find heimdall.
 		echo Install Heimdall v1.3.1 from http://www.glassechidna.com.au/products/heimdall/
@@ -124,16 +170,16 @@ flash_heimdall()
 		echo Couldn\'t reboot into download mode. Hope you\'re already in download mode
 	fi
 
-	case $1 in
+	case $project in
 	"system")
-		$HEIMDALL flash --factoryfs out/target/product/$DEVICE/$1.img
+		$HEIMDALL flash --factoryfs out/target/product/$DEVICE/$project.img
 		;;
 
 	"kernel")
 		$HEIMDALL flash --kernel device/samsung/$DEVICE/kernel
 		;;
 
-	*)
+	"")
 		$HEIMDALL flash --factoryfs out/target/product/$DEVICE/system.img --kernel device/samsung/$DEVICE/kernel &&
 		update_time
 		;;
@@ -248,6 +294,33 @@ flash_i9100()
 	echo Run \|./flash.sh gaia\| if you wish to install or update gaia.
 }
 
+flash_gecko()
+{
+	delete_extra_gecko_files_on_device &&
+	run_adb push $GECKO_OBJDIR/dist/b2g /system/b2g &&
+	return 0
+}
+
+flash_gaia()
+{
+	GAIA_MAKE_FLAGS="ADB=\"$ADB\""
+	USER_VARIANTS="user(debug)?"
+	if [[ "$VARIANT" =~ $USER_VARIANTS ]]; then
+		# Gaia's build takes care of remounting /system for production builds
+		GAIA_MAKE_FLAGS+=" PRODUCTION=1"
+	fi
+	adb wait-for-device
+	if adb shell cat /data/local/webapps/webapps.json | grep -qs '"basePath": "/system' ; then
+		echo -n "In ${bold}production${offbold} mode"
+		export B2G_SYSTEM_APPS=1
+		adb remount
+	else
+		echo -n "In ${bold}dev${offbold} mode"
+	fi 
+	make -C gaia install-gaia $GAIA_MAKE_FLAGS
+	return 0
+}
+
 while [ $# -gt 0 ]; do
 	case "$1" in
 	"-s")
@@ -255,7 +328,19 @@ while [ $# -gt 0 ]; do
 		FASTBOOT_FLAGS+="-s $2"
 		shift
 		;;
+	"-f")
+		FULLFLASH=true
+		;;
+	"-h"|"--help")
+		echo "Usage: $0 [-s device] [-f] [project]"
+		exit 0
+		;;
+	"-"*)
+		echo "$0: Unrecognized option: $1"
+		exit 1
+		;;
 	*)
+		FULLFLASH=true
 		PROJECT=$1
 		;;
 	esac
@@ -266,21 +351,14 @@ case "$PROJECT" in
 "gecko")
 	run_adb shell stop b2g &&
 	run_adb remount &&
-	delete_extra_gecko_files_on_device &&
-	run_adb push $GECKO_OBJDIR/dist/b2g /system/b2g &&
+	flash_gecko &&
 	echo Restarting B2G &&
 	run_adb shell start b2g
 	exit $?
 	;;
 
 "gaia")
-	GAIA_MAKE_FLAGS="ADB=\"$ADB\""
-	USER_VARIANTS="user(debug)?"
-	if [[ "$VARIANT" =~ $USER_VARIANTS ]]; then
-		# Gaia's build takes care of remounting /system for production builds
-		GAIA_MAKE_FLAGS+=" PRODUCTION=1"
-	fi
-	make -C gaia install-gaia $GAIA_MAKE_FLAGS
+	flash_gaia
 	exit $?
 	;;
 
@@ -291,11 +369,28 @@ case "$PROJECT" in
 esac
 
 case "$DEVICE" in
-"otoro"|"unagi"|"keon"|"peak"|"inari"|"leo"|"hamachi"|"sp8810ea"|"helix"|"wasabi")
+"leo"|"hamachi"|"helix"|"fugu"|"tarako")
+	if $FULLFLASH; then
+		flash_fastboot nounlock $PROJECT
+		exit $?
+	else
+		run_adb root &&
+		run_adb shell stop b2g &&
+		run_adb remount &&
+		flash_gecko &&
+		flash_gaia &&
+		update_time &&
+		echo Restarting B2G &&
+		run_adb shell start b2g
+	fi
+	exit $?
+	;;
+
+"otoro"|"unagi"|"keon"|"peak"|"inari"|"sp8810ea"|"wasabi"|"flatfish")
 	flash_fastboot nounlock $PROJECT
 	;;
 
-"panda"|"maguro"|"m4"|"crespo"|"crespo4g"|"mako")
+"panda"|"maguro"|"m4"|"crespo"|"crespo4g"|"mako"|"hammerhead"|"flo")
 	flash_fastboot unlock $PROJECT
 	;;
 
