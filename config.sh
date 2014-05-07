@@ -5,8 +5,8 @@ sync_flags=""
 
 repo_sync() {
 	rm -rf .repo/manifest* &&
-	$REPO init -u $GITREPO -b $BRANCH -m $1.xml &&
-	$REPO sync $sync_flags
+	$REPO init -u $GITREPO -b $BRANCH -m $1.xml $REPO_INIT_FLAGS &&
+	$REPO sync $sync_flags $REPO_SYNC_FLAGS
 	ret=$?
 	if [ "$GITREPO" = "$GIT_TEMP_REPO" ]; then
 		rm -rf $GIT_TEMP_REPO
@@ -125,6 +125,11 @@ case "$1" in
 	repo_sync $1
 	;;
 
+"flame")
+	echo PRODUCT_NAME=$1 >> .tmp-config &&
+       repo_sync $1
+	;;
+
 "fugu")
 	echo DEVICE=fugu >> .tmp-config &&
 	echo LUNCH=fugu-eng >> .tmp-config &&
@@ -134,14 +139,20 @@ case "$1" in
 	;;
 
 "tarako")
-	echo DEVICE=tarako >> .tmp-config &&
-	echo LUNCH=sp6821a_gonk-userdebug >> .tmp-config &&
+	echo DEVICE=sp6821a_gonk >> .tmp-config &&
+	echo PRODUCT_NAME=sp6821a_gonk >> .tmp-config &&
 	repo_sync $1
 	;;
 
 "tara")
 	echo DEVICE=sp8810ea >> .tmp-config &&
 	echo LUNCH=sp8810eabase-eng >> .tmp-config &&
+	repo_sync $1
+	;;
+
+"dolphin")
+	echo DEVICE=scx15_sp7715ga >> .tmp-config &&
+	echo PRODUCT_NAME=scx15_sp7715gaplus >> .tmp-config &&
 	repo_sync $1
 	;;
 
@@ -193,8 +204,10 @@ case "$1" in
 	echo - fugu
 	echo - tarako
 	echo - tara
+	echo - dolphin
 	echo - pandaboard
 	echo - flatfish
+	echo - flame
 	echo - emulator
 	echo - emulator-jb
 	echo - emulator-kk
