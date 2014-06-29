@@ -30,6 +30,8 @@ def build_flash_fota(args):
     private_key = args.private_key or os.path.join(security_dir,
         args.dev_key + ".pk8")
     output_zip = args.output or "flash.zip"
+    update_bin = args.update_bin or os.path.join(update_tools.b2g_dir, "tools",
+        "update-tools", "bin", "gonk", "update-binary")
 
     system = update_tools.Partition.create_system(args.system_fs_type,
                                                   args.system_location)
@@ -44,8 +46,12 @@ def build_flash_fota(args):
 	builder.fota_dirs = args.fota_dirs.split(' ')
         builder.fota_files = [line.rstrip() for line in open(args.fota_files, 'r')]
 
+    builder.fota_check_device_name = args.fota_check_device_name
+    builder.fota_check_gonk_version = args.fota_check_gonk_version
+    builder.system_dir = args.system_dir
+
     builder.build_flash_fota(args.system_dir, public_key, private_key,
-                             output_zip)
+                             output_zip, update_bin)
     print "FOTA Flash ZIP generated: %s" % output_zip
 
 def main():
@@ -77,6 +83,14 @@ def main():
         required=False, default="",
         help="file containing list of files in /system to include")
 
+    fota_checks_group = parser.add_argument_group("fota_checks_group")
+    fota_checks_group.add_argument("--fota-check-device-name", dest="fota_check_device_name",
+        default=None, required=False,
+        help="'add a check to prevent the update from being installed on a device different from TARGET_DEVICE")
+    fota_checks_group.add_argument("--fota-check-gonk-version", dest="fota_check_gonk_version",
+        default=False, required=False, action="store_true",
+        help="add checks to verify that the device's libraries match the ones the update depends on")
+
     signing_group = parser.add_argument_group("signing options")
     signing_group.add_argument("-d", "--dev-key", dest="dev_key",
         metavar="KEYNAME", default="testkey",
@@ -90,6 +104,10 @@ def main():
     signing_group.add_argument("-K", "--public-key", dest="public_key",
         metavar="PUBLIC_KEY", default=None,
         help="Public key used for signing the update.zip. Overrides --dev-key.")
+
+    parser.add_argument("-u", "--update-bin", dest="update_bin",
+        required=False, default=None,
+        help="Specify update-binary to be used in update.zip.")
 
     parser.add_argument("-o", "--output", dest="output", metavar="ZIP",
         help="Output to ZIP. Default: flash.zip", default=None)

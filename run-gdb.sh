@@ -8,8 +8,40 @@ get_pid_by_name() {
 SCRIPT_NAME=$(basename $0)
 . load-config.sh
 
-ADB=adb
-GDB=${GDB:-prebuilts/gcc/$(uname -s | tr "[[:upper:]]" "[[:lower:]]")-x86/arm/arm-linux-androideabi-4.7/bin/arm-linux-androideabi-gdb}
+ADB=${ADB:-adb}
+if [ ! -f "`which \"$ADB\"`" ]; then
+	ADB=out/host/`uname -s | tr "[[:upper:]]" "[[:lower:]]"`-x86/bin/adb
+fi
+echo "ADB Location: " $ADB
+
+case $DEVICE in
+    generic_x86)
+        TARGET_ARCH=x86
+        TARGET_TRIPLE=i686-linux-android
+        ;;
+    *)
+        TARGET_ARCH=arm
+        TARGET_TRIPLE=arm-linux-androideabi
+        ;;
+esac
+
+HOST_OS=$(uname -s | tr "[[:upper:]]" "[[:lower:]]")-x86
+
+if [ -z "${GDB}" ]; then
+   if [ -d prebuilt ]; then
+      GDB=prebuilt/${HOST_OS}/toolchain/${TARGET_TRIPLE}-4.4.x/bin/${TARGET_TRIPLE}-gdb
+   elif [ -d prebuilts ]; then
+      GDB=prebuilts/gcc/${HOST_OS}/${TARGET_ARCH}/${TARGET_TRIPLE}-4.7/bin/${TARGET_TRIPLE}-gdb
+      PYTHON_DIR=prebuilts/python/${HOST_OS}/2.7.5
+      if [ -d $PYTHON_DIR ]; then
+        export PYTHONHOME=$PYTHON_DIR
+      fi
+   else
+      echo "Not sure where gdb is located. Override using GDB= or fix the script."
+      exit 1
+   fi
+fi
+
 B2G_BIN=/system/b2g/b2g
 GDBINIT=/tmp/b2g.gdbinit.$(whoami).$$
 

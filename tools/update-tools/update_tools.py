@@ -32,6 +32,10 @@ import zipfile
 this_dir = os.path.abspath(os.path.dirname(__file__))
 b2g_dir = os.path.dirname(os.path.dirname(this_dir))
 bin_dir = os.path.join(this_dir, "bin")
+b2g_libs = [
+    "libfreebl3.so", "libmozglue.so", "libnss3.so",
+    "libnssckbi.so", "libsoftokn3.so", "libxul.so"
+]
 
 def validate_env(parser):
     if platform.system() not in ("Linux", "Darwin"):
@@ -373,9 +377,8 @@ class FotaZip(zipfile.ZipFile):
     def write_updater_script(self, script):
         self.writestr(self.UPDATER_SCRIPT, script)
 
-    def write_default_update_binary(self):
-        prebuilt_update_binary = os.path.join(bin_dir, "gonk", "update-binary")
-        self.write(prebuilt_update_binary, self.UPDATE_BINARY)
+    def write_default_update_binary(self, update_bin):
+        self.write(update_bin, self.UPDATE_BINARY)
 
     def write_recursive(self, path, zip_path=None, filter=None):
         def zip_relpath(file_path):
@@ -402,7 +405,7 @@ class FotaZip(zipfile.ZipFile):
                     dirs.remove(d)
 
 class FotaZipBuilder(object):
-    def build_unsigned_zip(self, update_dir, output_zip):
+    def build_unsigned_zip(self, update_dir, output_zip, update_bin):
         if not os.path.exists(update_dir):
             raise UpdateException("Update dir doesn't exist: %s" % update_dir)
 
@@ -415,7 +418,7 @@ class FotaZipBuilder(object):
 
         if not os.path.exists(update_binary):
             print "Warning: update-binary not found, using default"
-            update_zipfile.write_default_update_binary()
+            update_zipfile.write_default_update_binary(update_bin)
 
         update_zipfile.write_recursive(update_dir)
         update_zipfile.close()
@@ -852,6 +855,79 @@ class FlashFotaBuilder(object):
                  p.device, p.mount_point))
             self.generator.mounts.add(p.mount_point)
 
+    def AssertSystemHasRwAccess(self):
+        """
+           Assert that /system is mounted in rw mode
+        """
+        self.generator.Print("Checking /system is writable")
+        self.generator.script.append('assert(run_program("/system/bin/touch", "/system/bin/") == 0);')
+        self.generator.Print("Partition is writable, we can continue")
+
+    def GetDependencies(self, path):
+        """
+           Find dependencies from readelf output
+        """
+        so_re = re.compile(r".*\[(.*)\.so\]")
+        result = run_command(["readelf", "-d", path])
+        dependencies = []
+        for line in result.splitlines():
+            if line.find("(NEEDED)") > 0:
+                match = so_re.match(line)
+                if match and not (match.group(1) + ".so" in b2g_libs):
+                    # print "Adding dep against", match.group(1), "for", path
+                    dependencies.append(match.group(1) + ".so")
+        return dependencies
+
+    def GetSha1Values(self):
+        """
+           Build a list of file/sha1 values
+        """
+        b2g_dir = os.path.join(self.system_dir, "b2g")
+        b2g_bins = b2g_libs + [ "b2g", "plugin-container", "updater" ]
+        b2g_exec_files = map(lambda x: os.path.join(b2g_dir, x), b2g_bins)
+
+        deps_list = []
+        for p in b2g_exec_files:
+            deps_list = list(set(deps_list + self.GetDependencies(p)))
+
+        sha1_list = []
+        for root, dirs, files in os.walk(self.system_dir):
+            for file in files:
+                if file in deps_list:
+                    fpath = os.path.join(root, file)
+                    rpath = fpath.replace(self.system_dir, "/system")
+                    with open(fpath, 'r') as lib:
+                        hasher = hashlib.sha1()
+                        hasher.update(lib.read())
+                        sha1_list.append({
+                            'file': rpath,
+                            'sha1': hasher.hexdigest()
+                        })
+        return sha1_list
+
+    def AssertGonkVersion(self):
+        """
+           Assert that the gonk libs sha1 hashes are okay
+        """
+        self.generator.Print("Checking Gonk version")
+        for e in self.GetSha1Values():
+            self.generator.Print("Checking %s" % (e['file'],))
+            self.generator.script.append(('assert(sha1_check(read_file("%s"), "%s"));') % (e['file'], e['sha1'],))
+        self.generator.Print("Gonk version is okay")
+
+    def AssertDeviceOrModel(self, device):
+        """
+           Assert that the device identifier is the given string.
+        """
+        self.generator.Print("Checking device")
+        cmd = ('assert('
+               'getprop("ro.build.product") == "%s" || '
+               'getprop("ro.product.device") == "%s" || '
+               'getprop("ro.product.model") == "%s"'
+               ');' % (device, device, device))
+        self.generator.script.append(cmd)
+        self.generator.Print("Device is compatible")
+
     def import_releasetools(self):
         releasetools_dir = os.path.join(b2g_dir, "build", "tools", "releasetools")
         sys.path.append(releasetools_dir)
@@ -870,14 +946,14 @@ class FlashFotaBuilder(object):
             return False
         return True
 
-    def build_flash_fota(self, system_dir, public_key, private_key, output_zip):
+    def build_flash_fota(self, system_dir, public_key, private_key, output_zip, update_bin):
         fd, unsigned_zip = tempfile.mkstemp()
         os.close(fd)
 
         with FotaZip(unsigned_zip, "w") as flash_zip:
             flash_zip.write_recursive(system_dir, "system", filter=self.zip_filter)
             flash_zip.write_updater_script(self.build_flash_script())
-            flash_zip.write_default_update_binary()
+            flash_zip.write_default_update_binary(update_bin)
 
         FotaZipBuilder().sign_zip(unsigned_zip, public_key, private_key,
                                   output_zip)
@@ -885,6 +961,9 @@ class FlashFotaBuilder(object):
 
     def build_flash_script(self):
         self.generator.Print("Starting B2G FOTA: " + self.fota_type)
+
+        if self.fota_check_device_name:
+            self.AssertDeviceOrModel(self.fota_check_device_name)
 
         if not self.fota_type == 'partial':
             for mount_point, partition in self.fstab.iteritems():
@@ -895,6 +974,11 @@ class FlashFotaBuilder(object):
 
         for mount_point in self.fstab:
             self.AssertMountIfNeeded(mount_point)
+
+        if self.fota_type == 'partial' and self.fota_check_gonk_version:
+            self.AssertGonkVersion()
+
+        self.AssertSystemHasRwAccess()
 
         if self.fota_type == 'partial':
             for d in self.fota_dirs:
