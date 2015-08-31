@@ -266,6 +266,17 @@ flash_gecko()
 	return 0
 }
 
+flash_gecko_hardfp()
+{
+	delete_extra_gecko_files_on_device &&
+	run_adb push $GECKO_OBJDIR/dist/b2g /system/b2g/hard &&
+	run_adb shell "cp /system/bin/b2g.sh /system/bin/b2g-ori.sh"
+	run_adb push gonk-misc/b2g-hardfp.sh /system/bin/b2g.sh
+	run_adb shell "chmod 755 /system/bin/b2g.sh" 
+	return 0
+}
+
+
 flash_gaia()
 {
 	GAIA_MAKE_FLAGS="ADB=\"$ADB\""
@@ -348,6 +359,17 @@ case "$PROJECT" in
 	run_adb shell stop b2g &&
 	run_adb remount &&
 	flash_gecko &&
+	echo Restarting B2G &&
+	run_adb shell start b2g
+	exit $?
+	;;
+
+"gecko-hardfp")
+	resp=`run_adb root` || exit $?
+	[ "$resp" != "adbd is already running as root" ] && run_adb wait-for-device
+	run_adb shell stop b2g &&
+	run_adb remount &&
+	flash_gecko_hardfp &&
 	echo Restarting B2G &&
 	run_adb shell start b2g
 	exit $?

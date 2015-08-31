@@ -19,4 +19,4 @@ rm -rf out/target/product/flame/obj/lib/libm.so
 rm -rf out/target/product/flame/obj/SHARED_LIBRARIES/libm_*
 rm -rf out/target/product/flame/obj/STATIC_LIBRARIES/libm_*
 
-./build.sh showcommands libc 2&>1 | tee build-bionic.log
+./build.sh showcommands libc 2>&1 | tee build-bionic.log
